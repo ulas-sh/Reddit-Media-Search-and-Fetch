@@ -889,7 +889,6 @@
     updateStatus();
   }
 
-  let _jsonpSeq = 0;
   const WORKER_KEY = 'rmedia_worker_url';
 
   function getWorkerUrl() { return localStorage.getItem(WORKER_KEY) ?? ''; }
@@ -899,11 +898,35 @@
     else localStorage.removeItem(WORKER_KEY);
   }
 
-  // Via Cloudflare Worker (reliable, CORS-enabled)
+  // Arctic Shift — public Reddit archive API, CORS-enabled, no auth needed
+  async function fetchRedditViaArcticShift(query, sort, after) {
+    const sortMap = { relevance: 'score', hot: 'score', new: 'created_utc', top: 'score' };
+    const params = new URLSearchParams({
+      q: query,
+      limit: 100,
+      sort: sortMap[sort] ?? 'score',
+      order: 'desc',
+    });
+    if (after) params.set('after', after);
+    const r = await fetch(`https://arctic-shift.photon-reddit.com/api/posts/search?${params}`, {
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!r.ok) throw new Error(`Arctic Shift ${r.status}`);
+    const json = await r.json();
+    // Normalize to Reddit API shape
+    return normalizeArcticShift(json);
+  }
+
+  function normalizeArcticShift(json) {
+    const posts = (json.data ?? json.posts ?? json ?? []);
+    const children = posts.map(p => ({ kind: 't3', data: p }));
+    return { data: { children, after: json.metadata?.after ?? null } };
+  }
+
+  // Optional custom proxy (worker URL configured via ⚙️)
   async function fetchRedditViaWorker(query, sort, after) {
     let base = getWorkerUrl();
     if (!base) throw new Error('no-worker');
-    // Strip any existing query string from the saved URL
     base = base.split('?')[0].replace(/\/$/, '');
     const params = new URLSearchParams({
       q: query, sort, limit: 100,
@@ -926,62 +949,15 @@
     return data;
   }
 
-  // Via JSONP directly to Reddit (works on localhost/file://)
-  function fetchRedditViaJsonp(query, sort, after) {
-    return new Promise((resolve, reject) => {
-      const cbName = `_rc${++_jsonpSeq}`;
-      let settled = false;
-      const timer = setTimeout(() => { settle(); reject(new Error('timeout')); }, 8000);
-
-      function settle() {
-        clearTimeout(timer);
-        delete window[cbName];
-        document.getElementById(cbName)?.remove();
-        settled = true;
-      }
-
-      window[cbName] = data => {
-        if (settled) return;
-        settle();
-        data?.data?.children !== undefined ? resolve(data) : reject(new Error('Bad shape'));
-      };
-
-      const params = new URLSearchParams({
-        q: query, sort, limit: 100, type: 'link', raw_json: 1,
-        include_over_18: nsfwEnabled() ? 'on' : 'off',
-        safe_search: nsfwEnabled() ? 'off' : 'on',
-        jsonp: cbName,
-      });
-      if (after) params.set('after', after);
-
-      const script = document.createElement('script');
-      script.id = cbName;
-      script.referrerPolicy = 'no-referrer';
-      script.src = `https://www.reddit.com/search.json?${params}`;
-      script.onerror = () => { if (!settled) { settle(); reject(new Error('jsonp-blocked')); } };
-      document.head.appendChild(script);
-    });
-  }
-
   async function fetchReddit(query, sort, after) {
-    // 1. Worker (if configured) — most reliable for hosted deployments
+    // 1. Custom proxy (if configured) — for users who set up their own
     if (getWorkerUrl()) {
       try { return await fetchRedditViaWorker(query, sort, after); }
-      catch (workerErr) {
-        // Worker failed — show error with details, re-prompt setup
-        console.error('[worker]', workerErr);
-        showWorkerSetup(workerErr.message);
-        throw new Error(`Worker request failed: ${workerErr.message}`);
-      }
+      catch (workerErr) { console.warn('[worker]', workerErr.message); }
     }
-    // 2. JSONP — works on localhost and file://
-    try { return await fetchRedditViaJsonp(query, sort, after); }
-    catch (e) {
-      if (e.message !== 'jsonp-blocked' && e.message !== 'timeout') throw e;
-    }
-    // 3. JSONP blocked → prompt user to set up Worker
-    showWorkerSetup();
-    throw new Error('Reddit is blocking requests from this domain. See the setup prompt.');
+    // 2. Arctic Shift — works everywhere, no setup needed
+    try { return await fetchRedditViaArcticShift(query, sort, after); }
+    catch (e) { throw new Error(`Search failed: ${e.message}`); }
   }
 
   function showWorkerSetup(errorMsg) {
