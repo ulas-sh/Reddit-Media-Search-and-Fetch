@@ -895,18 +895,28 @@
 
   // Via Cloudflare Worker (reliable, CORS-enabled)
   async function fetchRedditViaWorker(query, sort, after) {
-    const base = getWorkerUrl();
+    let base = getWorkerUrl();
     if (!base) throw new Error('no-worker');
+    // Strip any existing query string from the saved URL
+    base = base.split('?')[0].replace(/\/$/, '');
     const params = new URLSearchParams({
       q: query, sort, limit: 100,
       include_over_18: nsfwEnabled() ? 'on' : 'off',
       safe_search: nsfwEnabled() ? 'off' : 'on',
     });
     if (after) params.set('after', after);
-    const r = await fetch(`${base}?${params}`, { signal: AbortSignal.timeout(12000) });
-    if (!r.ok) throw new Error(`Worker ${r.status}`);
+    let r;
+    try {
+      r = await fetch(`${base}?${params}`, { signal: AbortSignal.timeout(12000) });
+    } catch (fetchErr) {
+      throw new Error(`Network error: ${fetchErr.message}`);
+    }
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      throw new Error(`Worker returned ${r.status}: ${body.slice(0, 120)}`);
+    }
     const data = await r.json();
-    if (data?.data?.children === undefined) throw new Error('Bad response shape');
+    if (data?.data?.children === undefined) throw new Error('Bad response shape from worker');
     return data;
   }
 
@@ -950,28 +960,39 @@
   async function fetchReddit(query, sort, after) {
     // 1. Worker (if configured) — most reliable for hosted deployments
     if (getWorkerUrl()) {
-      try { return await fetchRedditViaWorker(query, sort, after); } catch (_) {}
+      try { return await fetchRedditViaWorker(query, sort, after); }
+      catch (workerErr) {
+        // Worker failed — show error with details, re-prompt setup
+        console.error('[worker]', workerErr);
+        showWorkerSetup(workerErr.message);
+        throw new Error(`Worker request failed: ${workerErr.message}`);
+      }
     }
     // 2. JSONP — works on localhost and file://
     try { return await fetchRedditViaJsonp(query, sort, after); }
     catch (e) {
       if (e.message !== 'jsonp-blocked' && e.message !== 'timeout') throw e;
     }
-    // 3. JSONP blocked → prompt user to set up Worker once
+    // 3. JSONP blocked → prompt user to set up Worker
     showWorkerSetup();
     throw new Error('Reddit is blocking requests from this domain. See the setup prompt.');
   }
 
-  function showWorkerSetup() {
-    if (document.getElementById('workerModal')) return;
+  function showWorkerSetup(errorMsg) {
+    document.getElementById('workerModal')?.remove();
     const modal = document.createElement('div');
     modal.id = 'workerModal';
     modal.style.cssText = `
       position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;
       background:rgba(0,0,0,0.85);padding:20px;`;
+    const savedUrl = getWorkerUrl();
+    const errorHtml = errorMsg
+      ? `<div style="margin-bottom:14px;padding:8px 12px;background:#2a0a0a;border:1px solid #6a1a1a;border-radius:6px;font-size:0.8rem;color:#e07070;word-break:break-all">⚠️ ${errorMsg}</div>`
+      : '';
     modal.innerHTML = `
       <div style="background:#1a1a1a;border:1px solid #2e2e2e;border-radius:14px;padding:28px;max-width:500px;width:100%;font-family:system-ui,sans-serif;color:#e8e8e8">
-        <h2 style="margin:0 0 12px;font-size:1.1rem;color:#ff4500">One-time setup needed</h2>
+        <h2 style="margin:0 0 12px;font-size:1.1rem;color:#ff4500">${errorMsg ? 'Worker request failed' : 'One-time setup needed'}</h2>
+        ${errorHtml}
         <p style="margin:0 0 16px;font-size:0.88rem;line-height:1.6;color:#aaa">
           Reddit blocks API requests from hosted sites. You need a free
           <a href="https://workers.cloudflare.com" target="_blank" style="color:#ff4500">Cloudflare Worker</a>
@@ -984,10 +1005,12 @@
           <li>Paste it below and click Save</li>
         </ol>
         <input id="workerUrlInput" type="url" placeholder="https://your-worker.yourname.workers.dev"
+          value="${savedUrl}"
           style="width:100%;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:0.9rem;padding:10px 12px;margin-bottom:12px;outline:none;box-sizing:border-box" />
         <div style="display:flex;gap:8px">
           <button onclick="saveWorkerUrl()" style="flex:1;background:#ff4500;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:0.9rem;font-weight:600;padding:10px">Save & Search</button>
           <button onclick="document.getElementById('workerModal').remove()" style="background:#242424;border:1px solid #333;border-radius:8px;color:#aaa;cursor:pointer;font-size:0.9rem;padding:10px 16px">Cancel</button>
+          ${savedUrl ? `<button onclick="setWorkerUrl('');document.getElementById('workerModal').remove()" style="background:#242424;border:1px solid #6a1a1a;border-radius:8px;color:#e07070;cursor:pointer;font-size:0.9rem;padding:10px 12px">Clear</button>` : ''}
         </div>
       </div>`;
     document.body.appendChild(modal);
