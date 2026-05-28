@@ -899,28 +899,36 @@
   }
 
   // Arctic Shift — public Reddit archive API, CORS-enabled, no auth needed
+  // Pagination uses created_utc timestamps (stored in `after` as ISO date string)
   async function fetchRedditViaArcticShift(query, sort, after) {
-    const sortMap = { relevance: 'score', hot: 'score', new: 'created_utc', top: 'score' };
     const params = new URLSearchParams({
-      q: query,
+      query,
       limit: 100,
-      sort: sortMap[sort] ?? 'score',
-      order: 'desc',
+      sort: 'desc',
+      over_18: nsfwEnabled() ? 'true' : 'false',
     });
-    if (after) params.set('after', after);
+    // `after` here is a created_utc timestamp from the previous page's last post
+    if (after) params.set('before', after);
     const r = await fetch(`https://arctic-shift.photon-reddit.com/api/posts/search?${params}`, {
       signal: AbortSignal.timeout(12000),
     });
-    if (!r.ok) throw new Error(`Arctic Shift ${r.status}`);
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      throw new Error(`Arctic Shift ${r.status}: ${txt.slice(0, 100)}`);
+    }
     const json = await r.json();
-    // Normalize to Reddit API shape
     return normalizeArcticShift(json);
   }
 
   function normalizeArcticShift(json) {
-    const posts = (json.data ?? json.posts ?? json ?? []);
+    const posts = Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : []);
     const children = posts.map(p => ({ kind: 't3', data: p }));
-    return { data: { children, after: json.metadata?.after ?? null } };
+    // Use created_utc of last post as cursor for next page
+    const last = posts[posts.length - 1];
+    const nextAfter = last?.created_utc
+      ? new Date(last.created_utc * 1000).toISOString()
+      : null;
+    return { data: { children, after: posts.length === 100 ? nextAfter : null } };
   }
 
   // Optional custom proxy (worker URL configured via ⚙️)
