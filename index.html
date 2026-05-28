@@ -885,22 +885,53 @@
 
   let _jsonpSeq = 0;
 
+  // Proxy-based fetch fallback when JSONP is blocked (e.g. GitHub Pages)
+  async function fetchRedditViaProxy(query, sort, after) {
+    const params = new URLSearchParams({
+      q: query, sort, limit: 100, type: 'link', raw_json: 1,
+      include_over_18: nsfwEnabled() ? 'on' : 'off',
+      safe_search: nsfwEnabled() ? 'off' : 'on',
+    });
+    if (after) params.set('after', after);
+    const redditUrl = `https://www.reddit.com/search.json?${params}`;
+    const proxies = [
+      `https://corsproxy.io/?${encodeURIComponent(redditUrl)}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(redditUrl)}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(redditUrl)}`,
+    ];
+    for (const url of proxies) {
+      try {
+        const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        if (!r.ok) continue;
+        const text = await r.text();
+        if (!text.trim().startsWith('{')) continue;
+        const data = JSON.parse(text);
+        if (data?.data?.children !== undefined) return data;
+      } catch (_) {}
+    }
+    throw new Error('All Reddit proxies failed — check your connection');
+  }
+
   function fetchReddit(query, sort, after) {
     return new Promise((resolve, reject) => {
       const cbName = `_rc${++_jsonpSeq}`;
+      let settled = false;
+
       const timeout = setTimeout(() => {
         cleanup();
-        reject(new Error('Request timed out'));
-      }, 12000);
+        // JSONP timed out — fall back to proxy
+        fetchRedditViaProxy(query, sort, after).then(resolve).catch(reject);
+      }, 8000);
 
       function cleanup() {
         clearTimeout(timeout);
         delete window[cbName];
-        const el = document.getElementById(cbName);
-        if (el) el.remove();
+        document.getElementById(cbName)?.remove();
       }
 
       window[cbName] = data => {
+        if (settled) return;
+        settled = true;
         cleanup();
         if (data?.data?.children !== undefined) resolve(data);
         else reject(new Error('Unexpected response shape'));
@@ -916,8 +947,15 @@
 
       const script = document.createElement('script');
       script.id = cbName;
+      script.referrerPolicy = 'no-referrer';
       script.src = `https://www.reddit.com/search.json?${params}`;
-      script.onerror = () => { cleanup(); reject(new Error('Script load failed — Reddit may be blocking requests')); };
+      script.onerror = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        // JSONP blocked — fall back to proxy fetch immediately
+        fetchRedditViaProxy(query, sort, after).then(resolve).catch(reject);
+      };
       document.head.appendChild(script);
     });
   }
