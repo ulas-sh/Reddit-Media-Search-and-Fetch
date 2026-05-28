@@ -221,6 +221,11 @@
 
     .badge.video { background: rgba(255,69,0,0.85); }
     .badge.gif { background: rgba(100,180,80,0.9); }
+    .badge.source { background: rgba(20,120,220,0.88); bottom: auto; top: 7px; right: auto; left: 7px; }
+    .badge.source.redgifs { background: rgba(255,60,110,0.9); }
+    .badge.source.gfycat  { background: rgba(0,180,140,0.9); }
+    .badge.source.streamable { background: rgba(100,60,220,0.9); }
+    .badge.source.twitch  { background: rgba(100,65,165,0.9); }
 
     .play-icon {
       position: absolute;
@@ -498,6 +503,41 @@
     .lightbox-close:hover { background: var(--accent); border-color: var(--accent); }
 
     /* View toggle */
+    /* NSFW toggle */
+    .nsfw-toggle {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-shrink: 0;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .nsfw-toggle input { display: none; }
+    .nsfw-track {
+      width: 36px; height: 20px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      position: relative;
+      transition: background 0.2s, border-color 0.2s;
+      flex-shrink: 0;
+    }
+    .nsfw-track::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 14px; height: 14px;
+      background: var(--muted);
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .nsfw-toggle input:checked + .nsfw-track { background: #c0392b; border-color: #c0392b; }
+    .nsfw-toggle input:checked + .nsfw-track::after { transform: translateX(16px); background: #fff; }
+    .nsfw-toggle input:checked ~ .nsfw-label { color: #e74c3c; }
+
     .view-toggle {
       display: flex;
       gap: 4px;
@@ -587,13 +627,6 @@
       overflow: hidden;
     }
 
-    .reel-slide img,
-    .reel-slide video {
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-    }
-
     .reel-slide .reel-media-bg {
       position: absolute;
       inset: 0;
@@ -605,11 +638,12 @@
     }
 
     .reel-slide .reel-media-fg {
-      position: relative;
-      z-index: 1;
-      max-width: 100%;
-      max-height: 100%;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
       object-fit: contain;
+      z-index: 1;
       display: block;
     }
 
@@ -730,6 +764,11 @@
       <button class="filter-tab" data-type="video" onclick="setFilter('video',this)">Videos</button>
       <button class="filter-tab" data-type="gif" onclick="setFilter('gif',this)">GIFs</button>
     </div>
+    <label class="nsfw-toggle" title="Toggle NSFW content">
+      <input type="checkbox" id="nsfwToggle" checked onchange="onNsfwChange()" />
+      <span class="nsfw-track"></span>
+      <span class="nsfw-label">NSFW</span>
+    </label>
     <div class="view-toggle">
       <button class="view-btn active" id="btnGrid" onclick="setView('grid')" title="Grid view">⊞</button>
       <button class="view-btn" id="btnReel" onclick="setView('reel')" title="Reel view">▶</button>
@@ -742,6 +781,11 @@
 <!-- Mobile bottom nav -->
 <nav class="mobile-nav" id="mobileNav">
   <div class="mobile-nav-row">
+    <label class="nsfw-toggle" title="Toggle NSFW content">
+      <input type="checkbox" id="nsfwToggleM" checked onchange="onNsfwChange()" />
+      <span class="nsfw-track"></span>
+      <span class="nsfw-label">NSFW</span>
+    </label>
     <div class="view-toggle">
       <button class="view-btn active" id="btnGridM" onclick="setView('grid')" title="Grid">⊞</button>
       <button class="view-btn" id="btnReelM" onclick="setView('reel')" title="Reel">▶</button>
@@ -864,7 +908,9 @@
 
       const params = new URLSearchParams({
         q: query, sort, limit: 100, type: 'link', raw_json: 1,
-        include_over_18: 'on', safe_search: 'off', jsonp: cbName
+        include_over_18: nsfwEnabled() ? 'on' : 'off',
+        safe_search: nsfwEnabled() ? 'off' : 'on',
+        jsonp: cbName
       });
       if (after) params.set('after', after);
 
@@ -874,6 +920,21 @@
       script.onerror = () => { cleanup(); reject(new Error('Script load failed — Reddit may be blocking requests')); };
       document.head.appendChild(script);
     });
+  }
+
+  function nsfwEnabled() {
+    return document.getElementById('nsfwToggle')?.checked ?? true;
+  }
+
+  function onNsfwChange() {
+    // Keep both toggles (desktop + mobile) in sync
+    const val = nsfwEnabled();
+    const other = document.getElementById('nsfwToggleM');
+    if (other && other.checked !== val) other.checked = val;
+    const desk = document.getElementById('nsfwToggle');
+    if (desk && desk.checked !== val) desk.checked = val;
+    // Re-run search immediately if there's an active query
+    if (currentQuery) doSearch();
   }
 
   async function doSearch() {
@@ -925,6 +986,10 @@ async function fetchAndAppend(reset) {
     }
   }
 
+  // Item registry — lets save buttons reference live item objects by ID
+  const itemRegistry = new Map();
+  let _itemSeq = 0;
+
   function extractMedia(child) {
     const p = child.data;
     const results = [];
@@ -933,19 +998,43 @@ async function fetchAndAppend(reset) {
     const permalink = `https://reddit.com${p.permalink}`;
     const base = { title: p.title, sub: p.subreddit_name_prefixed, ups: p.ups, url: permalink };
 
-    // Helper: push if not duplicate src
+    // Helper: assign stable ID, register, push if not duplicate src
     const seen = new Set();
     const push = item => {
       const key = item.src || item.thumb;
       if (!key || seen.has(key)) return;
       seen.add(key);
+      item._id = ++_itemSeq;
+      itemRegistry.set(item._id, item);
       results.push(item);
     };
 
-    // 1. Reddit-hosted video (v.redd.it)
+    // 0. Known external embeds — detected first so they're not swallowed by generic checks
+    const domain = (p.domain ?? '').toLowerCase();
+    const EXT_SOURCES = {
+      'redgifs.com': 'RedGifs',
+      'www.redgifs.com': 'RedGifs',
+      'gfycat.com': 'Gfycat',
+      'www.gfycat.com': 'Gfycat',
+      'streamable.com': 'Streamable',
+      'clips.twitch.tv': 'Twitch',
+      'v.redd.it': null, // handled below as reddit-hosted
+    };
+    if (domain in EXT_SOURCES && EXT_SOURCES[domain] !== null) {
+      const thumb = bestPreview(p) ?? decodeHtml(p.thumbnail !== 'default' ? p.thumbnail ?? '' : '');
+      push({ ...base, type: 'video', mediaType: 'gif', src: null, thumb,
+             needsResolve: true, resolveUrl: postUrl, source: EXT_SOURCES[domain] });
+      return results;
+    }
+
+    // 1. Reddit-hosted video (v.redd.it) — try to get the highest quality DASH MP4
     const rv = p.media?.reddit_video ?? p.secure_media?.reddit_video;
     if (rv?.fallback_url) {
-      push({ ...base, type: 'video', mediaType: 'video', src: rv.fallback_url, thumb: bestPreview(p) });
+      const base_url = rv.fallback_url.replace(/DASH_\d+\.mp4.*/, '');
+      const maxH = rv.height ?? 0;
+      const qualities = [1080, 720, 480, 360, 240].filter(q => q <= Math.max(maxH, 240));
+      const bestSrc = qualities.map(q => `${base_url}DASH_${q}.mp4`)[0] ?? rv.fallback_url;
+      push({ ...base, type: 'video', mediaType: 'video', src: bestSrc, fallbackSrc: rv.fallback_url, thumb: bestPreview(p) });
     }
 
     // 2. Gallery posts — iterate in gallery_data order for correct sequence
@@ -957,11 +1046,10 @@ async function fetchAndAppend(reset) {
         const m = p.media_metadata[id];
         if (!m || m.status !== 'valid') return;
 
-        // gallery previews use {u, x, y} not {url, width, height}
+        // gallery previews use {u, x, y} — pick highest resolution available
         const galleryThumb = (arr) => {
           if (!arr?.length) return '';
-          const mid = arr.reduce((best, r) => (r.x <= 640 ? r : best), arr[0]);
-          return decodeHtml(mid?.u ?? arr[0]?.u ?? '');
+          return decodeHtml(arr[arr.length - 1]?.u ?? arr[0]?.u ?? '');
         };
 
         if (m.e === 'Image') {
@@ -1014,15 +1102,6 @@ async function fetchAndAppend(reset) {
       push({ ...base, type: 'gif', mediaType: 'gif', src, thumb });
     }
 
-    // 5c. External embeds: RedGifs, Gfycat, Streamable — resolve lazily
-    if (!results.length) {
-      const domain = p.domain ?? '';
-      const isExtEmbed = /redgifs\.com|gfycat\.com|streamable\.com/.test(domain + postUrl);
-      if (isExtEmbed) {
-        const thumb = bestPreview(p) ?? decodeHtml(p.thumbnail ?? '');
-        push({ ...base, type: 'video', mediaType: 'gif', src: null, thumb, needsResolve: true, resolveUrl: postUrl });
-      }
-    }
 
     // 6. Any post with a preview image (rich:video thumbnails, links with previews)
     if (!results.length && p.preview?.images?.[0]) {
@@ -1040,53 +1119,103 @@ async function fetchAndAppend(reset) {
   // ── External media resolver ───────────────────────────────────────────────
   let _rgToken = null;
 
+  // Fetch JSON — tries direct, then two proxies, passing headers to all
+  async function fetchJson(url, headers = {}) {
+    const attempts = [
+      url,
+      `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    ];
+    for (const u of attempts) {
+      try {
+        const r = await fetch(u, { headers, signal: AbortSignal.timeout(9000) });
+        if (!r.ok) continue;
+        const text = await r.text();
+        const trimmed = text.trim();
+        if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) continue;
+        return JSON.parse(trimmed);
+      } catch (_) {}
+    }
+    return null;
+  }
+
   async function getRgToken() {
     if (_rgToken) return _rgToken;
-    try {
-      const r = await fetch('https://api.redgifs.com/v2/auth/temporary');
-      const d = await r.json();
-      _rgToken = d.token;
-    } catch (_) {}
+    const d = await fetchJson('https://api.redgifs.com/v2/auth/temporary');
+    _rgToken = d?.token ?? null;
+    console.log('[redgifs] token:', _rgToken ? 'OK' : 'FAILED');
     return _rgToken;
+  }
+
+  const PROXIES = [
+    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+  ];
+
+  // Cache resolved URLs so the same external ID is never fetched twice
+  const resolveCache = new Map();
+
+  async function fetchHtml(url) {
+    for (const proxy of PROXIES) {
+      try {
+        const r = await fetch(proxy(url), { signal: AbortSignal.timeout(10000) });
+        if (!r.ok) continue;
+        const text = await r.text();
+        if (text.trim().startsWith('<') || text.length > 500) return text;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  function extractMp4FromHtml(html) {
+    if (!html) return null;
+    // og:video or og:video:secure_url meta tag
+    const og = html.match(/property=["']og:video(?::secure_url)?["']\s+content=["']([^"']+)["']/i)?.[1]
+             ?? html.match(/content=["']([^"']+)["']\s+property=["']og:video(?::secure_url)?["']/i)?.[1];
+    if (og?.match(/\.(mp4|webm)/i)) return og;
+    // JSON blob embedded in page — hd/sd/url keys pointing to mp4
+    const json = html.match(/"hd"\s*:\s*"(https:[^"]+\.mp4[^"]*)"/)?.[1]
+               ?? html.match(/"sd"\s*:\s*"(https:[^"]+\.mp4[^"]*)"/)?.[1]
+               ?? html.match(/"url"\s*:\s*"(https:[^"]+\.mp4[^"]*)"/)?.[1];
+    if (json) return json;
+    // <source src="...mp4">
+    const src = html.match(/<source[^>]+src=["']([^"']+\.mp4[^"']*)["']/i)?.[1];
+    return src ?? null;
   }
 
   async function resolveExternalSrc(url) {
     if (!url) return null;
+    if (resolveCache.has(url)) return resolveCache.get(url);
 
-    // RedGifs
-    const rg = url.match(/redgifs\.com\/(?:watch|i|ifr)\/([A-Za-z0-9]+)/i);
-    if (rg) {
-      try {
-        const token = await getRgToken();
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const r = await fetch(`https://api.redgifs.com/v2/gifs/${rg[1].toLowerCase()}`, { headers });
-        const d = await r.json();
-        return d.gif?.urls?.hd ?? d.gif?.urls?.sd ?? null;
-      } catch (_) { return null; }
-    }
+    // In-flight deduplication: if already resolving this URL, wait for it
+    if (resolveCache.has(url + '__pending')) return resolveCache.get(url + '__pending');
 
-    // Gfycat (content migrated to RedGifs)
-    const gfy = url.match(/gfycat\.com\/(?:ifr\/)?([A-Za-z0-9]+)/i);
-    if (gfy) {
-      try {
-        const token = await getRgToken();
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const r = await fetch(`https://api.redgifs.com/v2/gifs/${gfy[1].toLowerCase()}`, { headers });
-        const d = await r.json();
-        return d.gif?.urls?.hd ?? d.gif?.urls?.sd ?? null;
-      } catch (_) { return null; }
-    }
+    const pending = (async () => {
+      // RedGifs & Gfycat
+      const rg = url.match(/(?:redgifs|gfycat)\.com\/(?:watch\/|i\/|ifr\/)?([A-Za-z0-9]+)/i);
+      if (rg) {
+        const html = await fetchHtml(`https://www.redgifs.com/watch/${rg[1]}`);
+        const src = extractMp4FromHtml(html);
+        resolveCache.set(url, src);
+        return src;
+      }
 
-    // Streamable
-    const sb = url.match(/streamable\.com\/([a-z0-9]+)/i);
-    if (sb) {
-      try {
-        const r = await fetch(`https://api.streamable.com/videos/${sb[1]}`);
-        const d = await r.json();
-        const u = d.files?.mp4?.url ?? d.files?.['mp4-mobile']?.url ?? null;
-        return u ? (u.startsWith('//') ? 'https:' + u : u) : null;
-      } catch (_) { return null; }
-    }
+      // Streamable
+      const sb = url.match(/streamable\.com\/([a-z0-9]+)/i);
+      if (sb) {
+        const html = await fetchHtml(`https://streamable.com/${sb[1]}`);
+        const src = extractMp4FromHtml(html);
+        resolveCache.set(url, src);
+        return src;
+      }
+
+      return null;
+    })();
+
+    resolveCache.set(url + '__pending', pending);
+    const result = await pending;
+    resolveCache.delete(url + '__pending');
+    return result;
 
     return null;
   }
@@ -1117,11 +1246,13 @@ async function fetchAndAppend(reset) {
   }
 
   function bestPreview(p) {
+    // Prefer the full-resolution source image
+    const src = p.preview?.images?.[0]?.source;
+    if (src?.url) return decodeHtml(src.url);
+    // Fall back to largest available resolution
     const imgs = p.preview?.images?.[0]?.resolutions;
     if (!imgs?.length) return null;
-    // pick largest preview ≤ 640px wide
-    const chosen = imgs.reduce((best, r) => r.width <= 640 ? r : best, imgs[0]);
-    return decodeHtml(chosen.url);
+    return decodeHtml(imgs[imgs.length - 1].url);
   }
 
   function decodeHtml(str) {
@@ -1131,16 +1262,35 @@ async function fetchAndAppend(reset) {
 
   function renderBatch() {
     const slice = filteredItems.slice(displayedCount, displayedCount + PAGE);
+    // Kick off all external resolves in parallel before building cards
+    slice.filter(i => i.needsResolve && !resolveCache.has(i.resolveUrl))
+         .forEach(i => resolveExternalSrc(i.resolveUrl));
     slice.forEach(item => grid.appendChild(makeCard(item)));
     displayedCount += slice.length;
   }
 
   // Unmute videos that are centered in the viewport
+  function unmuteAndPlay(v) {
+    v.muted = false;
+    v.volume = 1;
+    // Browsers need the video to restart playback after unmuting
+    v.pause();
+    v.play().catch(() => {
+      // Browser blocked sound — keep muted and play silently
+      v.muted = true;
+      v.play().catch(() => {});
+    });
+  }
+
   const soundObserver = new IntersectionObserver(entries => {
     entries.forEach(entry => {
       const v = entry.target.querySelector('video.card-video');
       if (!v) return;
-      v.muted = !entry.isIntersecting;
+      if (entry.isIntersecting) {
+        unmuteAndPlay(v);
+      } else {
+        v.muted = true;
+      }
     });
   }, { rootMargin: '-38% 0px -38% 0px', threshold: 0 });
 
@@ -1162,7 +1312,10 @@ async function fetchAndAppend(reset) {
       <div class="title">${esc(item.title)}</div>
       <div class="meta"><span>${esc(item.sub)}</span><span>↑ ${fmt(item.ups)}</span></div>
     </div>`;
-    const saveBtnHtml = `<button class="save-btn" title="Save media" onclick="event.stopPropagation();saveMedia(${JSON.stringify(JSON.stringify(item))},this)">↓</button>`;
+    const saveBtnHtml = `<button class="save-btn" title="Save media" onclick="event.stopPropagation();saveItemById(${item._id},this)">↓</button>`;
+    const sourceFlare = item.source
+      ? `<div class="badge source ${item.source.toLowerCase()}">${item.source}</div>`
+      : '';
 
     if ((item.mediaType === 'video' || item.mediaType === 'gif') && item.src) {
       const badge = item.mediaType === 'video'
@@ -1175,36 +1328,41 @@ async function fetchAndAppend(reset) {
       v.loop = true;
       v.muted = true;
       v.playsInline = true;
-      v.preload = 'metadata';
+      v.preload = 'auto';
       v.style.width = '100%';
       v.style.display = 'block';
-      // fallback to thumbnail on error
+      // on error: try fallback src, then show thumbnail
       v.onerror = () => {
-        const img = document.createElement('img');
-        img.src = item.thumb ?? '';
-        img.style.width = '100%';
-        v.replaceWith(img);
+        if (item.fallbackSrc && v.src !== item.fallbackSrc) {
+          v.src = item.fallbackSrc;
+        } else {
+          const img = document.createElement('img');
+          img.src = item.thumb ?? '';
+          img.style.width = '100%';
+          v.replaceWith(img);
+        }
       };
       card.appendChild(v);
-      card.insertAdjacentHTML('beforeend', badge + saveBtnHtml + overlay);
+      card.insertAdjacentHTML('beforeend', badge + sourceFlare + saveBtnHtml + overlay);
       soundObserver.observe(card);
       playObserver.observe(card);
     } else if (item.needsResolve) {
       card.innerHTML = `
         <img class="resolve-placeholder" src="${item.thumb ?? ''}" alt="" loading="lazy" style="width:100%;display:block" />
         <div class="badge gif">GIF</div>
-        ${saveBtnHtml}${overlay}`;
+        ${sourceFlare}${saveBtnHtml}${overlay}`;
       resolveAndRenderMedia(item, card);
     } else if (item.mediaType === 'video' && !item.src) {
       card.innerHTML = `
-        <img src="${item.thumb}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'" />
+        <img src="${item.thumb}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.style.display='none'" />
         <div class="badge video">VIDEO</div>
+        ${sourceFlare}
         <div class="play-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="white"><polygon points="3,1 13,7 3,13"/></svg></div>
         ${saveBtnHtml}${overlay}`;
     } else {
       card.innerHTML = `
-        <img src="${item.thumb ?? item.src}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'" />
-        ${saveBtnHtml}${overlay}`;
+        <img src="${item.thumb ?? item.src}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.style.display='none'" />
+        ${sourceFlare}${saveBtnHtml}${overlay}`;
     }
     return card;
   }
@@ -1321,8 +1479,17 @@ async function fetchAndAppend(reset) {
     throw new Error('Could not fetch media');
   }
 
-  async function saveMedia(itemJson, btn) {
-    const item = JSON.parse(itemJson);
+  async function saveItemById(id, btn) {
+    const item = itemRegistry.get(id);
+    if (!item) { showToast('Item not found'); return; }
+    await saveMedia(item, btn);
+  }
+
+  async function saveMedia(item, btn) {
+    // Resolve src lazily if this is an external embed not yet fetched
+    if (!item.src && item.needsResolve) {
+      item.src = await resolveExternalSrc(item.resolveUrl);
+    }
     const src = item.src ?? item.thumb;
     if (!src) { showToast('No media URL available'); return; }
 
@@ -1384,7 +1551,7 @@ async function fetchAndAppend(reset) {
   let reelMuted = false;
   let reelItems = [];           // items rendered into slides
   let reelRenderedCount = 0;
-  const REEL_PRELOAD = 3;       // slides to render ahead
+  const REEL_PRELOAD = 5;       // slides to render ahead
   const REEL_PAGE = 8;          // slides to add per batch
 
   const reelShell  = document.getElementById('reelShell');
@@ -1419,12 +1586,18 @@ async function fetchAndAppend(reset) {
         renderReelBatch();
       }
 
-      // Sound: unmute active, mute all others
+      // Sound: unmute active slide, mute and pause others
       reelTrack.querySelectorAll('video.reel-video').forEach(v => {
-        v.muted = reelMuted || v.closest('.reel-slide').dataset.idx !== String(idx);
-        if (v.closest('.reel-slide').dataset.idx === String(idx)) {
-          v.play().catch(() => {});
+        const isActive = v.closest('.reel-slide').dataset.idx === String(idx);
+        if (isActive) {
+          if (reelMuted) {
+            v.muted = true;
+            v.play().catch(() => {});
+          } else {
+            unmuteAndPlay(v);
+          }
         } else {
+          v.muted = true;
           v.pause();
         }
       });
@@ -1506,7 +1679,7 @@ async function fetchAndAppend(reset) {
     bg.style.backgroundImage = `url(${thumb})`;
     slide.appendChild(bg);
 
-    // Media placeholder — actual src set by loadReelSlideMedia
+    // Media placeholder — actual src set by loadReelSlideMedia (or async resolver)
     if ((item.mediaType === 'video' || item.mediaType === 'gif') && item.src) {
       const v = document.createElement('video');
       v.className = 'reel-media-fg reel-video';
@@ -1518,6 +1691,25 @@ async function fetchAndAppend(reset) {
       v.poster = thumb;
       v.onerror = () => { v.replaceWith(makeReelImg(thumb)); };
       slide.appendChild(v);
+    } else if (item.needsResolve) {
+      // Show thumbnail while resolving; swap to video when ready
+      const placeholder = makeReelImg(thumb);
+      placeholder.className += ' resolve-placeholder';
+      slide.appendChild(placeholder);
+      resolveExternalSrc(item.resolveUrl).then(src => {
+        if (!src) return;
+        item.src = src;
+        const v = document.createElement('video');
+        v.className = 'reel-media-fg reel-video';
+        v.src = src;
+        v.loop = true;
+        v.muted = true;
+        v.playsInline = true;
+        v.autoplay = true;
+        v.poster = thumb;
+        v.onerror = () => {};
+        placeholder.replaceWith(v);
+      });
     } else {
       slide.appendChild(makeReelImg(item.src ?? thumb));
     }
@@ -1532,14 +1724,20 @@ async function fetchAndAppend(reset) {
     });
 
     // Info overlay
+    const SRC_COLORS = { redgifs:'rgba(255,60,110,0.9)', gfycat:'rgba(0,180,140,0.9)', streamable:'rgba(100,60,220,0.9)', twitch:'rgba(100,65,165,0.9)' };
+    const srcColor = SRC_COLORS[(item.source??'').toLowerCase()] ?? 'rgba(20,120,220,0.88)';
+    const srcTag = item.source
+      ? `<span style="display:inline-block;margin-bottom:6px;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:4px;background:${srcColor}">${item.source}</span>`
+      : '';
     slide.insertAdjacentHTML('beforeend', `
       <div class="reel-info">
+        ${srcTag}
         <div class="reel-sub">${esc(item.sub)}</div>
         <div class="reel-post-title">${esc(item.title)}</div>
         <div class="reel-ups">↑ ${fmt(item.ups)}</div>
       </div>
       <div class="reel-actions">
-        <button class="reel-action-btn" onclick="event.stopPropagation();saveMedia(${JSON.stringify(JSON.stringify(item))},this)">
+        <button class="reel-action-btn" onclick="event.stopPropagation();saveItemById(${item._id},this)">
           <span class="icon-circle">↓</span><span>Save</span>
         </button>
         <button class="reel-action-btn" onclick="window.open('${item.url}','_blank')">
