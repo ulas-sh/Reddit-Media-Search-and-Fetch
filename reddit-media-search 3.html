@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d0d0d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="r/media" />
+  <title>Reddit Media Search</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d0d;
+      --surface: #1a1a1a;
+      --surface2: #242424;
+      --border: #2e2e2e;
+      --accent: #ff4500;
+      --accent-hover: #ff6534;
+      --text: #e8e8e8;
+      --muted: #888;
+      --radius: 10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(13,13,13,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px;
+    }
+
+    .header-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .logo {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--accent);
+      white-space: nowrap;
+      letter-spacing: -0.5px;
+    }
+
+    .logo span { color: var(--text); }
+
+    .search-row {
+      display: flex;
+      gap: 8px;
+      flex: 1;
+      min-width: 240px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 0.95rem;
+      padding: 9px 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus { border-color: var(--accent); }
+    input[type="text"]::placeholder { color: var(--muted); }
+
+    select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 0.9rem;
+      padding: 9px 10px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    button.search-btn {
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius);
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 9px 20px;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    button.search-btn:hover { background: var(--accent-hover); }
+    button.search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .filter-tabs {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .filter-tab {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 500;
+      padding: 5px 13px;
+      transition: all 0.15s;
+    }
+
+    .filter-tab:hover { border-color: var(--accent); color: var(--text); }
+    .filter-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    main {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 16px 60px;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 0.88rem;
+      margin-bottom: 16px;
+      min-height: 20px;
+    }
+
+    .status.error { color: #e74c3c; }
+
+    .grid {
+      columns: 5 220px;
+      column-gap: 12px;
+    }
+
+    .card {
+      break-inside: avoid;
+      margin-bottom: 12px;
+      position: relative;
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      border-color: var(--accent);
+    }
+
+    .card img, .card video {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .card .overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 28px 10px 10px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.85));
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .card:hover .overlay { opacity: 1; }
+
+    .overlay .title {
+      font-size: 0.78rem;
+      font-weight: 500;
+      line-height: 1.3;
+      color: #fff;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .overlay .meta {
+      display: flex;
+      gap: 10px;
+      margin-top: 5px;
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.65);
+    }
+
+    .badge {
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge.video { background: rgba(255,69,0,0.85); }
+    .badge.gif { background: rgba(100,180,80,0.9); }
+
+    .play-icon {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 44px;
+      height: 44px;
+      background: rgba(255,69,0,0.85);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      opacity: 0.9;
+    }
+
+    .play-icon svg { margin-left: 3px; }
+
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 80px 20px;
+    }
+
+    .empty .icon { font-size: 3rem; margin-bottom: 12px; }
+    .empty p { font-size: 1rem; }
+
+    .spinner {
+      display: none;
+      text-align: center;
+      padding: 60px;
+      color: var(--muted);
+    }
+
+    .spinner.show { display: block; }
+
+    .spinner::after {
+      content: '';
+      display: inline-block;
+      width: 36px;
+      height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .load-more {
+      display: none;
+      margin: 24px auto 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 11px 28px;
+      transition: border-color 0.15s;
+    }
+
+    .load-more:hover { border-color: var(--accent); color: var(--accent); }
+    .load-more.show { display: block; }
+
+    /* Save button on cards */
+    .save-btn {
+      position: absolute;
+      top: 7px;
+      left: 7px;
+      z-index: 5;
+      background: rgba(0,0,0,0.65);
+      backdrop-filter: blur(4px);
+      border: none;
+      border-radius: 50%;
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.95rem;
+      width: 30px; height: 30px;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0;
+      transition: opacity 0.15s, background 0.15s, transform 0.1s;
+    }
+    .card:hover .save-btn { opacity: 1; }
+    .save-btn:hover { background: var(--accent); transform: scale(1.1); }
+    .save-btn.saved { background: #27ae60; opacity: 1; }
+    @media (max-width: 640px) { .save-btn { opacity: 1; } }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: calc(90px + env(safe-area-inset-bottom));
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--text);
+      font-size: 0.85rem;
+      padding: 8px 18px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 9999;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    #scroll-sentinel { height: 1px; }
+
+    /* ── Mobile bottom nav ── */
+    .mobile-nav {
+      display: none;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      z-index: 150;
+      background: rgba(13,13,13,0.96);
+      backdrop-filter: blur(14px);
+      border-top: 1px solid var(--border);
+      padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mobile-nav-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .mobile-nav .filter-tab { font-size: 0.78rem; padding: 5px 11px; }
+    .mobile-nav .view-toggle { margin-left: auto; flex-shrink: 0; }
+
+    /* ── Responsive overrides ── */
+    @media (max-width: 640px) {
+      /* Show mobile nav, hide desktop filter/view in header */
+      .mobile-nav { display: flex; }
+      .header-inner .filter-tabs,
+      .header-inner .view-toggle { display: none; }
+
+      header { padding: 10px 12px; }
+      .header-inner { gap: 8px; flex-wrap: nowrap; }
+      .logo { font-size: 1.1rem; flex-shrink: 0; }
+      .search-row { min-width: 0; }
+      input[type="text"] { font-size: 0.9rem; padding: 8px 11px; }
+      select { font-size: 0.85rem; padding: 8px 7px; }
+      button.search-btn { padding: 8px 14px; font-size: 0.88rem; }
+
+      main { padding: 12px 8px calc(80px + env(safe-area-inset-bottom)); }
+
+      .grid { columns: 2; column-gap: 8px; }
+      .card { margin-bottom: 8px; }
+      .overlay .title { font-size: 0.72rem; -webkit-line-clamp: 2; }
+
+      /* Reel: full safe-area coverage */
+      .reel-header {
+        padding-top: calc(12px + env(safe-area-inset-top));
+        padding-left: calc(12px + env(safe-area-inset-left));
+        padding-right: calc(12px + env(safe-area-inset-right));
+      }
+      .reel-counter {
+        top: calc(14px + env(safe-area-inset-top));
+        right: calc(12px + env(safe-area-inset-right));
+      }
+      .reel-slide .reel-info {
+        padding-bottom: calc(24px + env(safe-area-inset-bottom));
+        padding-left: calc(14px + env(safe-area-inset-left));
+      }
+      .reel-actions {
+        right: calc(10px + env(safe-area-inset-right));
+        bottom: calc(72px + env(safe-area-inset-bottom));
+      }
+      .reel-mute-btn {
+        bottom: calc(24px + env(safe-area-inset-bottom));
+        right: calc(12px + env(safe-area-inset-right));
+      }
+
+      /* Lightbox full-screen on mobile */
+      .lightbox { padding: 0; align-items: flex-end; }
+      .lightbox-inner {
+        max-width: 100%;
+        width: 100%;
+        max-height: 95vh;
+        border-radius: 16px 16px 0 0;
+        background: var(--surface);
+        padding: 12px;
+        gap: 8px;
+      }
+      .lightbox-inner img,
+      .lightbox-inner video { max-height: 65vh; border-radius: 10px; }
+      .lightbox-close { top: -10px; right: 10px; }
+    }
+
+    @media (max-width: 380px) {
+      .grid { columns: 1; }
+    }
+
+    /* Lightbox */
+    .lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(0,0,0,0.92);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .lightbox.open { display: flex; }
+
+    .lightbox-inner {
+      position: relative;
+      max-width: min(90vw, 1000px);
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .lightbox-inner img,
+    .lightbox-inner video {
+      max-width: 100%;
+      max-height: 78vh;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+
+    .lightbox-info {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+
+    .lightbox-title {
+      font-size: 0.9rem;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+
+    .lightbox-meta {
+      display: flex;
+      gap: 14px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .lightbox-meta a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .lightbox-meta a:hover { text-decoration: underline; }
+
+    .lightbox-close {
+      position: absolute;
+      top: -14px;
+      right: -14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 1.1rem;
+      width: 34px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .lightbox-close:hover { background: var(--accent); border-color: var(--accent); }
+
+    /* View toggle */
+    .view-toggle {
+      display: flex;
+      gap: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 3px;
+      flex-shrink: 0;
+    }
+    .view-btn {
+      background: none;
+      border: none;
+      border-radius: 7px;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 5px 10px;
+      font-size: 1rem;
+      transition: background 0.15s, color 0.15s;
+      line-height: 1;
+    }
+    .view-btn.active { background: var(--accent); color: #fff; }
+
+    /* Reel mode */
+    body.reel-mode main { padding: 0; max-width: 100%; }
+    body.reel-mode header { display: none; }
+
+    .reel-shell {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: #000;
+    }
+    .reel-shell.open { display: block; }
+
+    .reel-header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%);
+    }
+
+    .reel-back {
+      background: rgba(255,255,255,0.12);
+      border: none;
+      border-radius: 50%;
+      color: #fff;
+      cursor: pointer;
+      font-size: 1.1rem;
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(6px);
+      flex-shrink: 0;
+    }
+    .reel-back:hover { background: rgba(255,255,255,0.22); }
+
+    .reel-title-bar {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .reel-track {
+      height: 100%;
+      overflow-y: scroll;
+      scroll-snap-type: y mandatory;
+      scrollbar-width: none;
+    }
+    .reel-track::-webkit-scrollbar { display: none; }
+
+    .reel-slide {
+      height: 100%;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .reel-slide img,
+    .reel-slide video {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .reel-slide .reel-media-bg {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      filter: blur(28px) brightness(0.35);
+      transform: scale(1.1);
+      z-index: 0;
+    }
+
+    .reel-slide .reel-media-fg {
+      position: relative;
+      z-index: 1;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .reel-slide .reel-info {
+      position: absolute;
+      bottom: 0; left: 0; right: 60px;
+      z-index: 2;
+      padding: 60px 16px 28px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.75));
+    }
+
+    .reel-slide .reel-sub {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 5px;
+    }
+
+    .reel-slide .reel-post-title {
+      font-size: 0.93rem;
+      font-weight: 500;
+      color: #fff;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .reel-slide .reel-ups {
+      margin-top: 6px;
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.6);
+    }
+
+    .reel-actions {
+      position: absolute;
+      right: 12px;
+      bottom: 80px;
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      align-items: center;
+    }
+
+    .reel-action-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      background: none;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.7rem;
+    }
+
+    .reel-action-btn .icon-circle {
+      width: 44px; height: 44px;
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(6px);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+      transition: background 0.15s;
+    }
+    .reel-action-btn:hover .icon-circle { background: rgba(255,255,255,0.28); }
+
+    .reel-mute-btn {
+      position: absolute;
+      bottom: 28px;
+      right: 16px;
+      z-index: 3;
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(6px);
+      border: none;
+      border-radius: 50%;
+      color: #fff;
+      cursor: pointer;
+      font-size: 1.1rem;
+      width: 38px; height: 38px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .reel-mute-btn:hover { background: rgba(255,255,255,0.28); }
+
+    .reel-counter {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      z-index: 10;
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.65);
+      background: rgba(0,0,0,0.4);
+      padding: 3px 8px;
+      border-radius: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">r/<span>media</span></div>
+    <div class="search-row">
+      <input type="text" id="query" placeholder="Search Reddit for media…" autocomplete="off" />
+      <select id="sort">
+        <option value="relevance">Relevance</option>
+        <option value="hot">Hot</option>
+        <option value="new">New</option>
+        <option value="top">Top</option>
+      </select>
+      <button class="search-btn" id="searchBtn" onclick="doSearch()">Search</button>
+    </div>
+    <div class="filter-tabs">
+      <button class="filter-tab active" data-type="all" onclick="setFilter('all',this)">All</button>
+      <button class="filter-tab" data-type="image" onclick="setFilter('image',this)">Images</button>
+      <button class="filter-tab" data-type="video" onclick="setFilter('video',this)">Videos</button>
+      <button class="filter-tab" data-type="gif" onclick="setFilter('gif',this)">GIFs</button>
+    </div>
+    <div class="view-toggle">
+      <button class="view-btn active" id="btnGrid" onclick="setView('grid')" title="Grid view">⊞</button>
+      <button class="view-btn" id="btnReel" onclick="setView('reel')" title="Reel view">▶</button>
+    </div>
+  </div>
+</header>
+
+<div class="toast" id="toast"></div>
+
+<!-- Mobile bottom nav -->
+<nav class="mobile-nav" id="mobileNav">
+  <div class="mobile-nav-row">
+    <div class="view-toggle">
+      <button class="view-btn active" id="btnGridM" onclick="setView('grid')" title="Grid">⊞</button>
+      <button class="view-btn" id="btnReelM" onclick="setView('reel')" title="Reel">▶</button>
+    </div>
+  </div>
+  <div class="mobile-nav-row">
+    <button class="filter-tab active" data-type="all" onclick="setFilter('all',this)">All</button>
+    <button class="filter-tab" data-type="image" onclick="setFilter('image',this)">Images</button>
+    <button class="filter-tab" data-type="video" onclick="setFilter('video',this)">Videos</button>
+    <button class="filter-tab" data-type="gif" onclick="setFilter('gif',this)">GIFs</button>
+  </div>
+</nav>
+
+<!-- Reel overlay -->
+<div class="reel-shell" id="reelShell">
+  <div class="reel-header">
+    <button class="reel-back" onclick="setView('grid')">←</button>
+    <div class="reel-title-bar" id="reelTitleBar">Reddit Reels</div>
+  </div>
+  <div class="reel-counter" id="reelCounter"></div>
+  <button class="reel-mute-btn" id="reelMuteBtn" onclick="toggleReelMute()" title="Toggle sound">🔊</button>
+  <div class="reel-track" id="reelTrack"></div>
+</div>
+
+<main>
+  <div class="status" id="status"></div>
+  <div class="spinner" id="spinner"></div>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none">
+    <div class="icon">🖼️</div>
+    <p>No media found. Try a different search.</p>
+  </div>
+  <div id="scroll-sentinel"></div>
+</main>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+  <div class="lightbox-inner" id="lightboxInner">
+    <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+    <div id="lightboxMedia"></div>
+    <div class="lightbox-info">
+      <div class="lightbox-title" id="lightboxTitle"></div>
+      <div class="lightbox-meta" id="lightboxMeta"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let allItems = [];
+  let filteredItems = [];
+  let displayedCount = 0;
+  let activeFilter = 'all';
+  let after = null;
+  let currentQuery = '';
+  let isFetching = false;
+  const PAGE = 25;
+
+  const grid = document.getElementById('grid');
+  const spinner = document.getElementById('spinner');
+  const status = document.getElementById('status');
+  const empty = document.getElementById('empty');
+  const sentinel = document.getElementById('scroll-sentinel');
+
+  const scrollObserver = new IntersectionObserver(entries => {
+    if (entries[0].isIntersecting && !isFetching) {
+      if (displayedCount < filteredItems.length) {
+        renderBatch();
+        updateStatus();
+      } else if (after) {
+        fetchAndAppend(false);
+      }
+    }
+  }, { rootMargin: '400px' });
+  scrollObserver.observe(sentinel);
+
+  document.getElementById('query').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doSearch();
+  });
+
+  function setFilter(type, el) {
+    activeFilter = type;
+    // sync all filter tabs (desktop + mobile nav)
+    document.querySelectorAll('.filter-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.type === type);
+    });
+    applyFilter();
+  }
+
+  function applyFilter() {
+    filteredItems = activeFilter === 'all'
+      ? allItems
+      : allItems.filter(i => i.mediaType === activeFilter);
+    displayedCount = 0;
+    grid.innerHTML = '';
+    renderBatch();
+    updateStatus();
+  }
+
+  let _jsonpSeq = 0;
+
+  function fetchReddit(query, sort, after) {
+    return new Promise((resolve, reject) => {
+      const cbName = `_rc${++_jsonpSeq}`;
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('Request timed out'));
+      }, 12000);
+
+      function cleanup() {
+        clearTimeout(timeout);
+        delete window[cbName];
+        const el = document.getElementById(cbName);
+        if (el) el.remove();
+      }
+
+      window[cbName] = data => {
+        cleanup();
+        if (data?.data?.children !== undefined) resolve(data);
+        else reject(new Error('Unexpected response shape'));
+      };
+
+      const params = new URLSearchParams({
+        q: query, sort, limit: 100, type: 'link', raw_json: 1,
+        include_over_18: 'on', safe_search: 'off', jsonp: cbName
+      });
+      if (after) params.set('after', after);
+
+      const script = document.createElement('script');
+      script.id = cbName;
+      script.src = `https://www.reddit.com/search.json?${params}`;
+      script.onerror = () => { cleanup(); reject(new Error('Script load failed — Reddit may be blocking requests')); };
+      document.head.appendChild(script);
+    });
+  }
+
+  async function doSearch() {
+    const q = document.getElementById('query').value.trim();
+    if (!q) return;
+    currentQuery = q;
+    allItems = [];
+    after = null;
+    grid.innerHTML = '';
+    empty.style.display = 'none';
+    await fetchAndAppend(true);
+  }
+
+async function fetchAndAppend(reset) {
+    const sort = document.getElementById('sort').value;
+    const btn = document.getElementById('searchBtn');
+    isFetching = true;
+    spinner.classList.add('show');
+    btn.disabled = true;
+    status.textContent = 'Fetching…';
+    status.className = 'status';
+
+    try {
+      const data = await fetchReddit(currentQuery, sort, after);
+      const posts = data.data?.children ?? [];
+      after = data.data?.after ?? null;
+
+      const newItems = posts.flatMap(extractMedia);
+      allItems = reset ? newItems : [...allItems, ...newItems];
+      filteredItems = activeFilter === 'all'
+        ? allItems
+        : allItems.filter(i => i.mediaType === activeFilter);
+
+      if (reset) {
+        displayedCount = 0;
+        grid.innerHTML = '';
+      }
+
+      renderBatch();
+      updateStatus();
+      empty.style.display = filteredItems.length === 0 ? 'block' : 'none';
+    } catch (err) {
+      status.textContent = `Error: ${err.message}`;
+      status.className = 'status error';
+    } finally {
+      isFetching = false;
+      spinner.classList.remove('show');
+      btn.disabled = false;
+    }
+  }
+
+  function extractMedia(child) {
+    const p = child.data;
+    const results = [];
+    const hint = p.post_hint ?? '';
+    const postUrl = p.url ?? '';
+    const permalink = `https://reddit.com${p.permalink}`;
+    const base = { title: p.title, sub: p.subreddit_name_prefixed, ups: p.ups, url: permalink };
+
+    // Helper: push if not duplicate src
+    const seen = new Set();
+    const push = item => {
+      const key = item.src || item.thumb;
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      results.push(item);
+    };
+
+    // 1. Reddit-hosted video (v.redd.it)
+    const rv = p.media?.reddit_video ?? p.secure_media?.reddit_video;
+    if (rv?.fallback_url) {
+      push({ ...base, type: 'video', mediaType: 'video', src: rv.fallback_url, thumb: bestPreview(p) });
+    }
+
+    // 2. Gallery posts — iterate in gallery_data order for correct sequence
+    if (p.is_gallery && p.media_metadata) {
+      const orderedIds = p.gallery_data?.items?.map(i => i.media_id)
+        ?? Object.keys(p.media_metadata);
+
+      orderedIds.forEach(id => {
+        const m = p.media_metadata[id];
+        if (!m || m.status !== 'valid') return;
+
+        // gallery previews use {u, x, y} not {url, width, height}
+        const galleryThumb = (arr) => {
+          if (!arr?.length) return '';
+          const mid = arr.reduce((best, r) => (r.x <= 640 ? r : best), arr[0]);
+          return decodeHtml(mid?.u ?? arr[0]?.u ?? '');
+        };
+
+        if (m.e === 'Image') {
+          const src = decodeHtml(m.s?.u ?? '');
+          const thumb = galleryThumb(m.p) || src;
+          if (src) push({ ...base, type: 'image', mediaType: 'image', src, thumb });
+        } else if (m.e === 'AnimatedImage') {
+          const src = decodeHtml(m.s?.mp4 ?? m.s?.gif ?? '');
+          const thumb = galleryThumb(m.p);
+          if (src) push({ ...base, type: 'gif', mediaType: 'gif', src, thumb: thumb || src });
+        } else if (m.e === 'RedditVideo') {
+          const src = decodeHtml(m.dashUrl ?? m.fallbackUrl ?? '');
+          const thumb = galleryThumb(m.p);
+          if (src) push({ ...base, type: 'video', mediaType: 'video', src, thumb });
+        }
+      });
+      if (results.length) return results;
+    }
+
+    // 3. GIF variant (mp4-backed animated image)
+    const mp4Variant = p.preview?.images?.[0]?.variants?.mp4;
+    if (mp4Variant) {
+      const src = decodeHtml(mp4Variant.resolutions?.at(-1)?.url ?? mp4Variant.source?.url ?? '');
+      const thumb = bestPreview(p) ?? decodeHtml(p.preview?.images?.[0]?.source?.url ?? '');
+      if (src) {
+        push({ ...base, type: 'gif', mediaType: 'gif', src, thumb });
+        return results;
+      }
+    }
+
+    // 4. Direct image URL (i.redd.it, imgur, etc.)
+    const cleanUrl = postUrl.split('?')[0].toLowerCase();
+    if (/\.(jpg|jpeg|png|webp|gif|avif)$/.test(cleanUrl)) {
+      const mediaType = /\.gif$/.test(cleanUrl) ? 'gif' : 'image';
+      const thumb = bestPreview(p) ?? postUrl;
+      push({ ...base, type: 'image', mediaType, src: postUrl, thumb });
+    }
+
+    // 5. Imgur without extension — treat as image
+    if (!results.length && /imgur\.com\/[a-zA-Z0-9]+$/.test(postUrl)) {
+      const src = postUrl.replace('imgur.com/', 'i.imgur.com/') + '.jpg';
+      const thumb = bestPreview(p) ?? src;
+      push({ ...base, type: 'image', mediaType: 'image', src, thumb });
+    }
+
+    // 5b. Imgur gifv — convert directly to mp4 (no API needed)
+    if (!results.length && /imgur\.com\/.+\.gifv$/i.test(postUrl)) {
+      const src = postUrl.replace(/imgur\.com/, 'i.imgur.com').replace(/\.gifv$/i, '.mp4');
+      const thumb = bestPreview(p) ?? src;
+      push({ ...base, type: 'gif', mediaType: 'gif', src, thumb });
+    }
+
+    // 5c. External embeds: RedGifs, Gfycat, Streamable — resolve lazily
+    if (!results.length) {
+      const domain = p.domain ?? '';
+      const isExtEmbed = /redgifs\.com|gfycat\.com|streamable\.com/.test(domain + postUrl);
+      if (isExtEmbed) {
+        const thumb = bestPreview(p) ?? decodeHtml(p.thumbnail ?? '');
+        push({ ...base, type: 'video', mediaType: 'gif', src: null, thumb, needsResolve: true, resolveUrl: postUrl });
+      }
+    }
+
+    // 6. Any post with a preview image (rich:video thumbnails, links with previews)
+    if (!results.length && p.preview?.images?.[0]) {
+      const thumb = bestPreview(p);
+      const srcImg = decodeHtml(p.preview.images[0].source?.url ?? '');
+      if (thumb || srcImg) {
+        const isVideo = hint === 'rich:video' || hint === 'hosted:video';
+        push({ ...base, type: isVideo ? 'video' : 'image', mediaType: isVideo ? 'video' : 'image', src: isVideo ? null : (srcImg || thumb), thumb: thumb ?? srcImg });
+      }
+    }
+
+    return results;
+  }
+
+  // ── External media resolver ───────────────────────────────────────────────
+  let _rgToken = null;
+
+  async function getRgToken() {
+    if (_rgToken) return _rgToken;
+    try {
+      const r = await fetch('https://api.redgifs.com/v2/auth/temporary');
+      const d = await r.json();
+      _rgToken = d.token;
+    } catch (_) {}
+    return _rgToken;
+  }
+
+  async function resolveExternalSrc(url) {
+    if (!url) return null;
+
+    // RedGifs
+    const rg = url.match(/redgifs\.com\/(?:watch|i|ifr)\/([A-Za-z0-9]+)/i);
+    if (rg) {
+      try {
+        const token = await getRgToken();
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const r = await fetch(`https://api.redgifs.com/v2/gifs/${rg[1].toLowerCase()}`, { headers });
+        const d = await r.json();
+        return d.gif?.urls?.hd ?? d.gif?.urls?.sd ?? null;
+      } catch (_) { return null; }
+    }
+
+    // Gfycat (content migrated to RedGifs)
+    const gfy = url.match(/gfycat\.com\/(?:ifr\/)?([A-Za-z0-9]+)/i);
+    if (gfy) {
+      try {
+        const token = await getRgToken();
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const r = await fetch(`https://api.redgifs.com/v2/gifs/${gfy[1].toLowerCase()}`, { headers });
+        const d = await r.json();
+        return d.gif?.urls?.hd ?? d.gif?.urls?.sd ?? null;
+      } catch (_) { return null; }
+    }
+
+    // Streamable
+    const sb = url.match(/streamable\.com\/([a-z0-9]+)/i);
+    if (sb) {
+      try {
+        const r = await fetch(`https://api.streamable.com/videos/${sb[1]}`);
+        const d = await r.json();
+        const u = d.files?.mp4?.url ?? d.files?.['mp4-mobile']?.url ?? null;
+        return u ? (u.startsWith('//') ? 'https:' + u : u) : null;
+      } catch (_) { return null; }
+    }
+
+    return null;
+  }
+
+  async function resolveAndRenderMedia(item, container) {
+    const src = await resolveExternalSrc(item.resolveUrl);
+    if (!src) return; // leave thumbnail as-is
+    item.src = src;   // cache for reel/lightbox reuse
+
+    const v = document.createElement('video');
+    v.className = 'card-video';
+    v.src = src;
+    v.autoplay = true;
+    v.loop = true;
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = 'metadata';
+    v.style.width = '100%';
+    v.style.display = 'block';
+
+    // Replace the placeholder img
+    const placeholder = container.querySelector('img.resolve-placeholder');
+    if (placeholder) placeholder.replaceWith(v);
+    else container.prepend(v);
+
+    soundObserver.observe(container);
+    playObserver.observe(container);
+  }
+
+  function bestPreview(p) {
+    const imgs = p.preview?.images?.[0]?.resolutions;
+    if (!imgs?.length) return null;
+    // pick largest preview ≤ 640px wide
+    const chosen = imgs.reduce((best, r) => r.width <= 640 ? r : best, imgs[0]);
+    return decodeHtml(chosen.url);
+  }
+
+  function decodeHtml(str) {
+    if (!str) return str;
+    return str.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  }
+
+  function renderBatch() {
+    const slice = filteredItems.slice(displayedCount, displayedCount + PAGE);
+    slice.forEach(item => grid.appendChild(makeCard(item)));
+    displayedCount += slice.length;
+  }
+
+  // Unmute videos that are centered in the viewport
+  const soundObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      const v = entry.target.querySelector('video.card-video');
+      if (!v) return;
+      v.muted = !entry.isIntersecting;
+    });
+  }, { rootMargin: '-38% 0px -38% 0px', threshold: 0 });
+
+  // Pause videos that scroll fully out of view (save resources)
+  const playObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      const v = entry.target.querySelector('video.card-video');
+      if (!v) return;
+      entry.isIntersecting ? v.play().catch(() => {}) : v.pause();
+    });
+  }, { rootMargin: '10% 0px 10% 0px', threshold: 0 });
+
+  function makeCard(item) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.onclick = () => openReelAt(filteredItems.indexOf(item));
+
+    const overlay = `<div class="overlay">
+      <div class="title">${esc(item.title)}</div>
+      <div class="meta"><span>${esc(item.sub)}</span><span>↑ ${fmt(item.ups)}</span></div>
+    </div>`;
+    const saveBtnHtml = `<button class="save-btn" title="Save media" onclick="event.stopPropagation();saveMedia(${JSON.stringify(JSON.stringify(item))},this)">↓</button>`;
+
+    if ((item.mediaType === 'video' || item.mediaType === 'gif') && item.src) {
+      const badge = item.mediaType === 'video'
+        ? `<div class="badge video">VIDEO</div>`
+        : `<div class="badge gif">GIF</div>`;
+      const v = document.createElement('video');
+      v.className = 'card-video';
+      v.src = item.src;
+      v.autoplay = true;
+      v.loop = true;
+      v.muted = true;
+      v.playsInline = true;
+      v.preload = 'metadata';
+      v.style.width = '100%';
+      v.style.display = 'block';
+      // fallback to thumbnail on error
+      v.onerror = () => {
+        const img = document.createElement('img');
+        img.src = item.thumb ?? '';
+        img.style.width = '100%';
+        v.replaceWith(img);
+      };
+      card.appendChild(v);
+      card.insertAdjacentHTML('beforeend', badge + saveBtnHtml + overlay);
+      soundObserver.observe(card);
+      playObserver.observe(card);
+    } else if (item.needsResolve) {
+      card.innerHTML = `
+        <img class="resolve-placeholder" src="${item.thumb ?? ''}" alt="" loading="lazy" style="width:100%;display:block" />
+        <div class="badge gif">GIF</div>
+        ${saveBtnHtml}${overlay}`;
+      resolveAndRenderMedia(item, card);
+    } else if (item.mediaType === 'video' && !item.src) {
+      card.innerHTML = `
+        <img src="${item.thumb}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'" />
+        <div class="badge video">VIDEO</div>
+        <div class="play-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="white"><polygon points="3,1 13,7 3,13"/></svg></div>
+        ${saveBtnHtml}${overlay}`;
+    } else {
+      card.innerHTML = `
+        <img src="${item.thumb ?? item.src}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'" />
+        ${saveBtnHtml}${overlay}`;
+    }
+    return card;
+  }
+
+  function updateStatus() {
+    const total = filteredItems.length;
+    if (!total && allItems.length) {
+      status.textContent = `No ${activeFilter === 'all' ? '' : activeFilter + ' '}media in these results.`;
+    } else if (total) {
+      status.textContent = `Showing ${Math.min(displayedCount, total)} of ${total} media items`;
+    } else {
+      status.textContent = '';
+    }
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function fmt(n) {
+    if (n >= 1000) return (n/1000).toFixed(1) + 'k';
+    return n;
+  }
+
+  // Lightbox
+  function openLightbox(item) {
+    const lb = document.getElementById('lightbox');
+    const lm = document.getElementById('lightboxMedia');
+    const lt = document.getElementById('lightboxTitle');
+    const lmeta = document.getElementById('lightboxMeta');
+
+    lm.innerHTML = '';
+
+    if (item.type === 'video' && item.src) {
+      const v = document.createElement('video');
+      v.src = item.src;
+      v.controls = true;
+      v.autoplay = true;
+      v.loop = true;
+      v.style.borderRadius = '8px';
+      lm.appendChild(v);
+    } else if (item.type === 'gif' && item.src) {
+      const v = document.createElement('video');
+      v.src = item.src;
+      v.controls = false;
+      v.autoplay = true;
+      v.loop = true;
+      v.muted = true;
+      v.style.borderRadius = '8px';
+      lm.appendChild(v);
+    } else {
+      const img = document.createElement('img');
+      img.src = item.src ?? item.thumb;
+      img.alt = item.title;
+      img.style.borderRadius = '8px';
+      lm.appendChild(img);
+    }
+
+    lt.textContent = item.title;
+    lmeta.innerHTML = `
+      <span>${esc(item.sub)}</span>
+      <span>↑ ${fmt(item.ups)}</span>
+      <a href="${item.url}" target="_blank" rel="noopener">Open on Reddit ↗</a>`;
+
+    lb.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox(e) {
+    if (e && document.getElementById('lightboxInner').contains(e.target)) return;
+    document.getElementById('lightbox').classList.remove('open');
+    document.body.style.overflow = '';
+    document.getElementById('lightboxMedia').innerHTML = '';
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeLightbox(); if (viewMode === 'reel') setView('grid'); }
+  });
+
+  // ── Save to folder ────────────────────────────────────────────────────────
+  let saveDir = null; // FileSystemDirectoryHandle
+
+  function showToast(msg, duration = 2200) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), duration);
+  }
+
+  function mediaExt(item) {
+    const url = (item.src ?? item.thumb ?? '').split('?')[0];
+    const m = url.match(/\.(mp4|webm|gif|jpg|jpeg|png|webp|avif)$/i);
+    if (m) return m[1].toLowerCase();
+    if (item.mediaType === 'video' || item.type === 'video') return 'mp4';
+    if (item.mediaType === 'gif') return 'mp4';
+    return 'jpg';
+  }
+
+  function mediaFilename(item) {
+    const sub = (item.sub ?? 'reddit').replace(/[^a-zA-Z0-9]/g, '_');
+    const ext = mediaExt(item);
+    return `${sub}_${Date.now()}.${ext}`;
+  }
+
+  async function fetchMediaBlob(url) {
+    // try direct first, then via corsproxy
+    for (const u of [url, `https://corsproxy.io/?${encodeURIComponent(url)}`]) {
+      try {
+        const res = await fetch(u);
+        if (res.ok) return await res.blob();
+      } catch (_) {}
+    }
+    throw new Error('Could not fetch media');
+  }
+
+  async function saveMedia(itemJson, btn) {
+    const item = JSON.parse(itemJson);
+    const src = item.src ?? item.thumb;
+    if (!src) { showToast('No media URL available'); return; }
+
+    const origText = btn.innerHTML;
+    btn.innerHTML = '…';
+    btn.disabled = true;
+
+    try {
+      // Pick save directory if not yet chosen
+      if (!saveDir) {
+        if (!window.showDirectoryPicker) {
+          // Fallback: plain <a download>
+          await fallbackDownload(src, mediaFilename(item));
+          showToast('Saved to Downloads ↓');
+          return;
+        }
+        saveDir = await window.showDirectoryPicker({
+          id: 'reddit-media',
+          mode: 'readwrite',
+          startIn: 'downloads',
+        });
+      }
+
+      const blob = await fetchMediaBlob(src);
+      const filename = mediaFilename(item);
+      const fh = await saveDir.getFileHandle(filename, { create: true });
+      const w = await fh.createWritable();
+      await w.write(blob);
+      await w.close();
+
+      btn.innerHTML = '✓';
+      btn.classList.add('saved');
+      showToast(`Saved: ${filename}`);
+      setTimeout(() => { btn.innerHTML = origText; btn.classList.remove('saved'); btn.disabled = false; }, 2000);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        showToast('No folder selected');
+      } else {
+        // Last-resort fallback
+        try { await fallbackDownload(src, mediaFilename(item)); showToast('Saved to Downloads ↓'); }
+        catch (_) { showToast('Save failed: ' + err.message); }
+      }
+      btn.innerHTML = origText;
+      btn.disabled = false;
+    }
+  }
+
+  async function fallbackDownload(url, filename) {
+    const blob = await fetchMediaBlob(url);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+
+  // ── Reel mode ────────────────────────────────────────────────────────────
+  let viewMode = 'grid';
+  let reelMuted = false;
+  let reelItems = [];           // items rendered into slides
+  let reelRenderedCount = 0;
+  const REEL_PRELOAD = 3;       // slides to render ahead
+  const REEL_PAGE = 8;          // slides to add per batch
+
+  const reelShell  = document.getElementById('reelShell');
+  const reelTrack  = document.getElementById('reelTrack');
+  const reelCounter = document.getElementById('reelCounter');
+  const reelMuteBtn = document.getElementById('reelMuteBtn');
+  const reelTitleBar = document.getElementById('reelTitleBar');
+
+  // Observes which slide is active (center of viewport)
+  const reelActiveObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      const slide = entry.target;
+      const idx = +slide.dataset.idx;
+
+      // Update counter + title
+      reelCounter.textContent = `${idx + 1} / ${reelItems.length}`;
+      reelTitleBar.textContent = reelItems[idx]?.sub ?? 'Reddit Reels';
+
+      // Preload ahead
+      for (let i = idx + 1; i <= idx + REEL_PRELOAD && i < reelItems.length; i++) {
+        loadReelSlideMedia(i);
+      }
+
+      // Fetch more from Reddit when near end
+      if (idx >= reelItems.length - REEL_PAGE && !isFetching && after) {
+        fetchAndAppend(false);
+      }
+
+      // Render more slides if needed
+      if (idx >= reelRenderedCount - REEL_PAGE) {
+        renderReelBatch();
+      }
+
+      // Sound: unmute active, mute all others
+      reelTrack.querySelectorAll('video.reel-video').forEach(v => {
+        v.muted = reelMuted || v.closest('.reel-slide').dataset.idx !== String(idx);
+        if (v.closest('.reel-slide').dataset.idx === String(idx)) {
+          v.play().catch(() => {});
+        } else {
+          v.pause();
+        }
+      });
+    });
+  }, { threshold: 0.6 });
+
+  function openReelAt(idx) {
+    if (filteredItems.length === 0) return;
+    reelShell.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    ['btnGrid','btnGridM'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+    ['btnReel','btnReelM'].forEach(id => document.getElementById(id)?.classList.add('active'));
+    viewMode = 'reel';
+
+    if (reelTrack.children.length === 0) buildReel();
+
+    // Ensure slides up to idx are rendered
+    while (reelRenderedCount <= idx && reelRenderedCount < reelItems.length) {
+      renderReelBatch();
+    }
+    // Preload around target
+    for (let i = Math.max(0, idx - 1); i <= idx + REEL_PRELOAD && i < reelItems.length; i++) {
+      loadReelSlideMedia(i);
+    }
+    // Jump to slide instantly
+    const slide = reelTrack.querySelector(`.reel-slide[data-idx="${idx}"]`);
+    if (slide) slide.scrollIntoView({ behavior: 'instant' });
+  }
+
+  function setView(mode) {
+    viewMode = mode;
+    ['btnGrid','btnGridM'].forEach(id => document.getElementById(id)?.classList.toggle('active', mode === 'grid'));
+    ['btnReel','btnReelM'].forEach(id => document.getElementById(id)?.classList.toggle('active', mode === 'reel'));
+
+    if (mode === 'reel') {
+      if (filteredItems.length === 0) return; // nothing to show
+      reelShell.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      buildReel();
+    } else {
+      reelShell.classList.remove('open');
+      document.body.style.overflow = '';
+      // pause all reel videos
+      reelTrack.querySelectorAll('video').forEach(v => v.pause());
+    }
+  }
+
+  function buildReel() {
+    reelTrack.innerHTML = '';
+    reelItems = [...filteredItems];
+    reelRenderedCount = 0;
+    renderReelBatch();
+    // load first slide's media immediately
+    loadReelSlideMedia(0);
+    loadReelSlideMedia(1);
+    loadReelSlideMedia(2);
+    reelCounter.textContent = `1 / ${reelItems.length}`;
+    reelTitleBar.textContent = reelItems[0]?.sub ?? 'Reddit Reels';
+  }
+
+  function renderReelBatch() {
+    const end = Math.min(reelRenderedCount + REEL_PAGE, reelItems.length);
+    for (let i = reelRenderedCount; i < end; i++) {
+      reelTrack.appendChild(makeReelSlide(reelItems[i], i));
+    }
+    reelRenderedCount = end;
+  }
+
+  function makeReelSlide(item, idx) {
+    const slide = document.createElement('div');
+    slide.className = 'reel-slide';
+    slide.dataset.idx = idx;
+
+    const thumb = item.thumb ?? item.src ?? '';
+
+    // Blurred background
+    const bg = document.createElement('div');
+    bg.className = 'reel-media-bg';
+    bg.style.backgroundImage = `url(${thumb})`;
+    slide.appendChild(bg);
+
+    // Media placeholder — actual src set by loadReelSlideMedia
+    if ((item.mediaType === 'video' || item.mediaType === 'gif') && item.src) {
+      const v = document.createElement('video');
+      v.className = 'reel-media-fg reel-video';
+      v.dataset.src = item.src;
+      v.loop = true;
+      v.muted = true;
+      v.playsInline = true;
+      v.autoplay = false;
+      v.poster = thumb;
+      v.onerror = () => { v.replaceWith(makeReelImg(thumb)); };
+      slide.appendChild(v);
+    } else {
+      slide.appendChild(makeReelImg(item.src ?? thumb));
+    }
+
+    // Tap anywhere on slide to play/pause (mobile friendly)
+    slide.addEventListener('click', e => {
+      if (e.target.closest('.reel-actions, .reel-info')) return;
+      const v = slide.querySelector('video.reel-video');
+      if (!v) return;
+      if (v.paused) { v.play().catch(() => {}); slide.dataset.paused = ''; }
+      else { v.pause(); slide.dataset.paused = '1'; }
+    });
+
+    // Info overlay
+    slide.insertAdjacentHTML('beforeend', `
+      <div class="reel-info">
+        <div class="reel-sub">${esc(item.sub)}</div>
+        <div class="reel-post-title">${esc(item.title)}</div>
+        <div class="reel-ups">↑ ${fmt(item.ups)}</div>
+      </div>
+      <div class="reel-actions">
+        <button class="reel-action-btn" onclick="event.stopPropagation();saveMedia(${JSON.stringify(JSON.stringify(item))},this)">
+          <span class="icon-circle">↓</span><span>Save</span>
+        </button>
+        <button class="reel-action-btn" onclick="window.open('${item.url}','_blank')">
+          <span class="icon-circle">↗</span><span>Reddit</span>
+        </button>
+      </div>`);
+
+    reelActiveObserver.observe(slide);
+    return slide;
+  }
+
+  function makeReelImg(src) {
+    const img = document.createElement('img');
+    img.className = 'reel-media-fg';
+    img.src = src ?? '';
+    img.onerror = () => { img.style.display = 'none'; };
+    return img;
+  }
+
+  function loadReelSlideMedia(idx) {
+    if (idx < 0 || idx >= reelRenderedCount) return;
+    const slide = reelTrack.querySelector(`.reel-slide[data-idx="${idx}"]`);
+    if (!slide) return;
+    const v = slide.querySelector('video.reel-video');
+    if (v && !v.src && v.dataset.src) {
+      v.src = v.dataset.src;
+      v.load();
+    }
+  }
+
+  // Also rebuild reel items list when filter changes
+  const _origApplyFilter = applyFilter;
+  applyFilter = function() {
+    _origApplyFilter();
+    if (viewMode === 'reel' && filteredItems.length > 0) buildReel();
+  };
+
+  // When new items arrive from infinite scroll, append to reel
+  const _origRenderBatch = renderBatch;
+  renderBatch = function() {
+    _origRenderBatch();
+    if (viewMode === 'reel') {
+      reelItems = [...filteredItems];
+      renderReelBatch();
+    }
+  };
+
+  function toggleReelMute() {
+    reelMuted = !reelMuted;
+    reelMuteBtn.textContent = reelMuted ? '🔇' : '🔊';
+    reelTrack.querySelectorAll('video.reel-video').forEach(v => {
+      // only unmute the active slide
+      const idx = +v.closest('.reel-slide').dataset.idx;
+      const activeIdx = getActiveReelIdx();
+      v.muted = reelMuted || idx !== activeIdx;
+    });
+  }
+
+  function getActiveReelIdx() {
+    const trackTop = reelTrack.scrollTop;
+    const h = reelTrack.clientHeight;
+    return Math.round(trackTop / h);
+  }
+</script>
+</body>
+</html>
